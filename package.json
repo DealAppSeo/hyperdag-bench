@@ -1,0 +1,19 @@
+{
+  "name": "hyperdag-bench",
+  "version": "0.1.0",
+  "description": "Public benchmark suite for HyperDAG Protocol's HAL",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "ts-node src/index.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.18.0",
+    "dotenv": "^16.4.5"
+  }
+}

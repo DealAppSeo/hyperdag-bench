@@ -85,7 +85,7 @@ class RealHALClient implements IHALClient {
     private realHalModule: any = null;
 
     constructor() {
-        const halPath = path.resolve(__dirname, '../../../trinity-symphony-shared/lib/hal/index.js');
+        const halPath = path.resolve(__dirname, '../../repid-engine/src/hal/lib/index.ts');
         if (fs.existsSync(halPath)) {
             try {
                 this.realHalModule = require(halPath);

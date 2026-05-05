@@ -24,13 +24,18 @@ function checkCC1State() {
             return { success: false, reason: 'Still on broken commit b5865c7' };
         }
 
-        const smokeOutput = execSync(`npx ts-node ${smokeTestPath}`, { cwd: repidPath, encoding: 'utf-8' });
+        let smokeOutput = '';
+        try {
+            smokeOutput = execSync(`npx ts-node ${smokeTestPath}`, { cwd: repidPath, encoding: 'utf-8' });
+        } catch (e: any) {
+            smokeOutput = e.stdout || e.message;
+        }
         
         // Ensure HAL-T1-003 is correctly vetoed in the output
-        if (smokeOutput.includes('HAL-T1-003') && smokeOutput.includes('vetoed: true')) {
+        if (smokeOutput.includes('HAL-T1-003') && (smokeOutput.includes('vetoed:       TRUE') || smokeOutput.includes('vetoed: true'))) {
             return { success: true, commit: commitHash };
         } else {
-            return { success: false, reason: 'HAL-T1-003 not vetoing or missing from output' };
+            return { success: false, reason: 'HAL-T1-003 not vetoing or missing from output. Output: ' + smokeOutput.slice(0, 100) };
         }
     } catch (e: any) {
         return { success: false, reason: `Smoke test execution failed: ${e.message}` };

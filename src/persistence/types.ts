@@ -8,20 +8,23 @@ export interface RunnerResult {
     gen_provider: string;
     gen_model: string;
     gen_latency_ms: number;
-    generated_answer: string;
+    generated_answer: string | null;
     hal_mode: string;
-    hal_threshold: number;
-    hal_score: number;
-    hal_vetoed: boolean;
-    comma_gap: number;
-    signals: any;
-    hal_diagnostics: any;
+    hal_threshold: number | null;
+    hal_score: number | null;
+    hal_vetoed: boolean | null;
+    comma_gap: number | null;
+    signals: any | null;
+    hal_diagnostics: any | null;
     hal_latency_ms: number;
     hal_providers_used: string[];
     estimated_cost_usd: number;
     ground_truth_is_hallucination: boolean;
-    was_caught: boolean;
-    false_positive: boolean;
+    was_caught: boolean | null;
+    false_positive: boolean | null;
+    gen_failed?: boolean;
+    gen_failure_reason?: string;
+    providers_attempted?: string[];
 }
 
 export interface AblationResult {

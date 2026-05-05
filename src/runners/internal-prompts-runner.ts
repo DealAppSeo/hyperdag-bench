@@ -3,6 +3,7 @@ import path from 'path';
 import { HALClient } from '../hal-client';
 import { ManifestGenerator } from '../manifest/run-manifest';
 import { CerebrasAdapter } from '../llm-clients/providers/cerebras';
+import { RotationClient } from '../llm-clients/rotation-client';
 import dotenv from 'dotenv';
 dotenv.config({ path: 'C:\\Users\\Cash4\\repos\\repid-engine\\.env' });
 import { RunnerResultsWriter } from '../persistence/runner-results-writer';
@@ -56,7 +57,17 @@ async function run() {
     }
 
     const hal = new HALClient();
-    const llm = new CerebrasAdapter();
+    
+    // Create RotationClient with the provider
+    const providers = [];
+    if (process.env.CEREBRAS_API_KEY) providers.push(new CerebrasAdapter());
+    
+    if (providers.length === 0) {
+        console.warn("No API keys found for LLM providers. Using dummy client.");
+        // If we really have no keys, we might want to fallback or exit
+    }
+    
+    const llm = new RotationClient(providers);
     const results = [];
     let count = 0;
 
@@ -117,32 +128,56 @@ async function run() {
             console.log(`[${count+1}/${prompts.length * strictnessLevels.length}] Q (${item.prompt_id}) @ strictness ${level}`);
             
             // Generate answer only once per prompt
+            let llmGenFailed = false;
+            let failureReason = '';
+            let attemptedProviders: string[] = [];
+            
             if (!llmCalled) {
                 try {
-                    const llmRes = await llm.chat({
+                    const llmRes = await llm.generate({
                         messages: [{ role: 'user', content: item.prompt_text }],
                         max_tokens: 50
                     });
-                    answer = llmRes.content;
-                    latency_ms = llmRes.latency_ms;
-                    manifestGen.addModelUsage('cerebras', llmRes.model);
+                    
+                    attemptedProviders = llmRes.providers_attempted || [];
+                    
+                    if (llmRes.status === 'SUCCESS') {
+                        answer = llmRes.content || '';
+                        latency_ms = llmRes.latency_ms || 0;
+                        if (llmRes.provider && llmRes.model) {
+                            manifestGen.addModelUsage(llmRes.provider, llmRes.model);
+                        }
+                    } else {
+                        llmGenFailed = true;
+                        failureReason = llmRes.failure_reason || llmRes.status;
+                        answer = '';
+                        console.warn(`LLM failed: ${failureReason}`);
+                    }
                 } catch (e: any) {
-                    console.warn(`LLM failed: ${e.message}`);
-                    answer = `[ERROR: LLM Failed - ${e.message}]`;
+                    llmGenFailed = true;
+                    failureReason = e.message;
+                    answer = '';
+                    console.warn(`LLM unexpected error: ${e.message}`);
                 }
                 llmCalled = true;
             }
 
-            const halRes = await hal.evaluate(item.prompt_text, answer, { strictness: level });
+            let halRes: any = {};
+            if (!llmGenFailed) {
+                halRes = await hal.evaluate(item.prompt_text, answer, { strictness: level });
+            }
 
             const resultItem = {
                 prompt_id: item.prompt_id,
                 prompt_text: item.prompt_text,
-                generated_answer: answer,
+                generated_answer: llmGenFailed ? null : answer,
                 latency_ms: latency_ms,
-                hal_veto: halRes.vetoed,
-                comma_gap: halRes.comma_gap,
-                hal_diagnostics: { ...halRes, strictness: level },
+                hal_veto: llmGenFailed ? null : halRes.vetoed,
+                comma_gap: llmGenFailed ? null : halRes.comma_gap,
+                hal_diagnostics: llmGenFailed ? null : { ...halRes, strictness: level },
+                gen_failed: llmGenFailed,
+                gen_failure_reason: llmGenFailed ? failureReason : undefined,
+                providers_attempted: attemptedProviders,
                 timestamp: new Date().toISOString()
             };
             
@@ -159,20 +194,23 @@ async function run() {
                     gen_provider: 'cerebras',
                     gen_model: manifestGen.finalize().models_used.find((m: any) => m.provider === 'cerebras')?.model ?? 'llama3.1-8b',
                     gen_latency_ms: latency_ms,
-                    generated_answer: answer,
+                    generated_answer: llmGenFailed ? null : answer,
                     hal_mode: process.env.HAL_MODE || 'mock',
-                    hal_threshold: (halRes as any).threshold ?? 1.0136433,
-                    hal_score: halRes.hal_score,
-                    hal_vetoed: halRes.vetoed,
-                    comma_gap: halRes.comma_gap,
-                    signals: halRes,
-                    hal_diagnostics: { ...halRes, strictness: level },
+                    hal_threshold: llmGenFailed ? null : ((halRes as any).threshold ?? 1.0136433),
+                    hal_score: llmGenFailed ? null : halRes.hal_score,
+                    hal_vetoed: llmGenFailed ? null : halRes.vetoed,
+                    comma_gap: llmGenFailed ? null : halRes.comma_gap,
+                    signals: llmGenFailed ? null : halRes,
+                    hal_diagnostics: llmGenFailed ? null : { ...halRes, strictness: level },
                     hal_latency_ms: 0,
                     hal_providers_used: [],
                     estimated_cost_usd: 0,
                     ground_truth_is_hallucination: !!item.is_hallucination,
-                    was_caught: !!item.is_hallucination && halRes.vetoed,
-                    false_positive: !item.is_hallucination && halRes.vetoed
+                    was_caught: llmGenFailed ? null : (!!item.is_hallucination && halRes.vetoed),
+                    false_positive: llmGenFailed ? null : (!item.is_hallucination && halRes.vetoed),
+                    gen_failed: llmGenFailed,
+                    gen_failure_reason: llmGenFailed ? failureReason : undefined,
+                    providers_attempted: attemptedProviders
                 });
             } catch (e: any) {
                 console.error(`DB Write Failed: ${e.message}`);

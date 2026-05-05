@@ -47,7 +47,7 @@ async function runTests() {
     
     const client1 = new RotationClient([provider1, fallback1], { concurrency: 1 });
     const start1 = Date.now();
-    await client1.chat({ messages: [] } as any);
+    const res1 = await client1.generate({ messages: [] } as any);
     const timeTaken1 = Date.now() - start1;
     
     if (provider1.attempts !== 3) {
@@ -56,9 +56,12 @@ async function runTests() {
     if (fallback1.called) {
         throw new Error(`Test 1 Failed: Fallback should not have been called`);
     }
-    // Should have backed off ~1s + ~2s = ~3s
-    if (timeTaken1 < 2500) {
-        throw new Error(`Test 1 Failed: Expected to wait at least ~3000ms, took ${timeTaken1}ms`);
+    if (res1.status !== 'SUCCESS') {
+        throw new Error(`Test 1 Failed: Expected SUCCESS, got ${res1.status}`);
+    }
+    // Should have backed off ~2s + ~4s = ~6s
+    if (timeTaken1 < 5500) {
+        throw new Error(`Test 1 Failed: Expected to wait at least ~6000ms, took ${timeTaken1}ms`);
     }
     console.log("Test 1 passed!");
 
@@ -68,7 +71,7 @@ async function runTests() {
     
     const client2 = new RotationClient([provider2, fallback2], { concurrency: 1 });
     const start2 = Date.now();
-    await client2.chat({ messages: [] } as any);
+    const res2 = await client2.generate({ messages: [] } as any);
     const timeTaken2 = Date.now() - start2;
     
     if (provider2.attempts !== 4) {
@@ -77,11 +80,27 @@ async function runTests() {
     if (!fallback2.called) {
         throw new Error(`Test 2 Failed: Fallback should have been called`);
     }
-    // Should have backed off ~1s + ~2s + ~4s = ~7s
-    if (timeTaken2 < 6500) {
-        throw new Error(`Test 2 Failed: Expected to wait at least ~7000ms, took ${timeTaken2}ms`);
+    if (res2.status !== 'SUCCESS') {
+        throw new Error(`Test 2 Failed: Expected SUCCESS, got ${res2.status}`);
+    }
+    if (res2.providers_attempted.length !== 2) {
+        throw new Error(`Test 2 Failed: Expected 2 providers attempted`);
+    }
+    // Should have backed off ~2s + ~4s + ~8s = ~14s
+    if (timeTaken2 < 13000) {
+        throw new Error(`Test 2 Failed: Expected to wait at least ~14000ms, took ${timeTaken2}ms`);
     }
     console.log("Test 2 passed!");
+
+    console.log("\nRunning test 3: All fail");
+    const provider3 = new MockFailingProvider(5);
+    const fallback3 = new MockFailingProvider(5);
+    const client3 = new RotationClient([provider3, fallback3], { concurrency: 1 });
+    const res3 = await client3.generate({ messages: [] } as any);
+    if (res3.status !== 'RATE_LIMITED_EXHAUSTED') {
+        throw new Error(`Test 3 Failed: Expected RATE_LIMITED_EXHAUSTED, got ${res3.status}`);
+    }
+    console.log("Test 3 passed!");
     
     console.log("\nAll tests passed!");
 }

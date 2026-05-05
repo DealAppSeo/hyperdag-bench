@@ -9,7 +9,18 @@ export interface RotationClientOptions {
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-export class RotationClient implements LLMClient {
+export interface RotationResult {
+    status: 'SUCCESS' | 'RATE_LIMITED' | 'RATE_LIMITED_EXHAUSTED' | 'PROVIDER_ERROR' | 'CONTENT_FILTERED';
+    content?: string;
+    usage?: any;
+    provider?: string;
+    model?: string;
+    latency_ms?: number;
+    failure_reason?: string;
+    providers_attempted: string[];
+}
+
+export class RotationClient {
     private providers: LLMClient[];
     private tracker: RateLimitTracker;
     private isDryRun: boolean;
@@ -19,7 +30,6 @@ export class RotationClient implements LLMClient {
         this.providers = providers;
         this.tracker = new RateLimitTracker();
         
-        // Backward compatibility for old boolean signature
         if (typeof options === 'boolean') {
             this.isDryRun = options;
             this.limit = pLimit(3);
@@ -29,22 +39,28 @@ export class RotationClient implements LLMClient {
         }
     }
 
-    async chat(args: Parameters<LLMClient['chat']>[0]): ReturnType<LLMClient['chat']> {
+    async generate(args: Parameters<LLMClient['chat']>[0]): Promise<RotationResult> {
         return this.limit(async () => {
             if (this.isDryRun) {
                 return {
+                    status: 'SUCCESS',
                     content: "This is a dry-run mock response.",
                     usage: { input_tokens: 10, output_tokens: 10 },
                     provider: "dry-run",
                     model: "mock-model",
-                    latency_ms: 10
+                    latency_ms: 10,
+                    providers_attempted: ['dry-run']
                 };
             }
 
+            const providers_attempted: string[] = [];
+            let lastErrorMsg = '';
+
             for (const provider of this.providers) {
                 const providerName = provider.constructor.name;
+                providers_attempted.push(providerName);
                 const maxAttempts = 4; // 1 initial + 3 retries
-                const delays = [1000, 2000, 4000];
+                const delays = [2000, 4000, 8000];
 
                 for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                     if (!this.tracker.isAvailable(providerName)) {
@@ -54,11 +70,28 @@ export class RotationClient implements LLMClient {
                     try {
                         const response = await provider.chat(args);
                         console.log(`[RotationClient] Served by ${response.provider} (${response.model}) in ${response.latency_ms}ms.`);
-                        return response;
+                        return {
+                            status: 'SUCCESS',
+                            content: response.content,
+                            usage: response.usage,
+                            provider: response.provider,
+                            model: response.model,
+                            latency_ms: response.latency_ms,
+                            providers_attempted
+                        };
                     } catch (error: any) {
+                        lastErrorMsg = error.message;
                         const isTransient = error.status === 429 || error.status >= 500 || 
                                             error.message?.includes('429') || error.message?.includes('rate');
                         
+                        if (error.message?.toLowerCase().includes('filter')) {
+                            return {
+                                status: 'CONTENT_FILTERED',
+                                failure_reason: error.message,
+                                providers_attempted
+                            };
+                        }
+
                         if (isTransient) {
                             if (attempt < maxAttempts) {
                                 const delayMs = delays[attempt - 1];
@@ -77,7 +110,11 @@ export class RotationClient implements LLMClient {
                 }
             }
 
-            throw new Error("All LLM providers are exhausted or rate-limited.");
+            return {
+                status: lastErrorMsg.includes('429') || lastErrorMsg.includes('rate') ? 'RATE_LIMITED_EXHAUSTED' : 'PROVIDER_ERROR',
+                failure_reason: `ALL_PROVIDERS_ERROR: ${lastErrorMsg}`,
+                providers_attempted
+            };
         });
     }
 }

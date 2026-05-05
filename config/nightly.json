@@ -1,0 +1,21 @@
+{
+    "internal_prompts": {
+        "sample_size": 26
+    },
+    "truthfulqa": {
+        "sample_size": 100
+    },
+    "ablation": {
+        "thresholds": [0.5, 0.7, 0.9, 1.0, 1.013643, 1.05, 1.10],
+        "sample_size": 50
+    },
+    "rotation_priority": [
+        "CerebrasAdapter",
+        "GroqAdapter",
+        "GoogleAIAdapter",
+        "MistralAdapter",
+        "SambaNovaAdapter",
+        "AnthropicAdapter"
+    ],
+    "cost_cap_usd": 10.00
+}

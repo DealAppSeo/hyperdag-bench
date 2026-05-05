@@ -55,3 +55,19 @@ export interface AblationResult {
     study_b?: boolean | null;
     study_c?: boolean | null;
 }
+
+export interface ThresholdSweepResult {
+    run_id: string;
+    prompt_id: string;
+    threshold_value: number;
+    hal_vetoed: boolean;
+    comma_gap?: number | null;
+    hal_score?: number | null;
+    signals?: any | null;
+    is_hallucination?: boolean | null;
+    was_caught?: boolean | null;
+    false_positive?: boolean | null;
+    gen_provider: string;
+    gen_model: string;
+    latency_ms?: number | null;
+}

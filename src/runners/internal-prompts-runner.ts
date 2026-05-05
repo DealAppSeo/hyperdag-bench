@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { HALClient } from '../hal-client';
+import { ManifestGenerator } from '../manifest/run-manifest';
 
 async function run() {
     const args = process.argv.slice(2);
@@ -33,6 +34,10 @@ async function run() {
     const results = [];
     let count = 0;
 
+    const runId = new Date().getTime().toString();
+    const manifestGen = new ManifestGenerator(runId);
+    manifestGen.setDataset('hal-test-prompts-2026-05-04', prompts.length);
+
     console.log(`Starting Internal Prompts Benchmark for ${prompts.length} questions (Mode: ${process.env.HAL_MODE || 'mock'})...`);
 
     for (const item of prompts) {
@@ -52,13 +57,16 @@ async function run() {
             timestamp: new Date().toISOString()
         });
         
+        manifestGen.addModelUsage('mock', 'mock-model');
         count++;
     }
 
-    const runId = new Date().getTime().toString();
     const outDir = path.join(__dirname, `../../results/${runId}`);
     if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
     
+    const manifestPath = path.join(outDir, 'manifest.json');
+    fs.writeFileSync(manifestPath, JSON.stringify(manifestGen.finalize(), null, 2));
+
     const jsonlPath = path.join(outDir, 'internal-prompts-results.jsonl');
     fs.writeFileSync(jsonlPath, results.map(r => JSON.stringify(r)).join('\n'));
     

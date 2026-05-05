@@ -1,20 +1,28 @@
 import { getSupabaseClient } from './supabase-client';
-
-export interface AblationRecord {
-    run_id: string;
-    prompt_id: string;
-    threshold_value: number;
-    hal_vetoed: boolean;
-    created_at?: string;
-}
+import { AblationResult } from './types';
 
 export class AblationResultsWriter {
     private client = getSupabaseClient();
     private tableName = 'hal_ablation_results';
 
-    async write(record: AblationRecord) {
-        if (!record.created_at) record.created_at = new Date().toISOString();
-        const { error } = await this.client.from(this.tableName).insert(record);
+    async write(record: AblationResult) {
+        // Fallback or explicit values for nulls
+        const payload = {
+            ...record,
+            snapshot_id: record.snapshot_id ?? null,
+            sbfa_triggered: null,
+            bft_triggered: null,
+            slt_triggered: null,
+            repid_triggered: null,
+            wsce_triggered: null,
+            gnnsr_triggered: null,
+            anfis_triggered: null,
+            study_a: null,
+            study_b: null,
+            study_c: null
+        };
+
+        const { error } = await this.client.from(this.tableName).insert(payload);
         if (error) {
             console.error(`[AblationResultsWriter] Failed to write: ${error.message}`);
             throw error;
@@ -22,11 +30,24 @@ export class AblationResultsWriter {
         console.log(`[AblationResultsWriter] Wrote 1 record.`);
     }
 
-    async writeMany(records: AblationRecord[]) {
+    async writeMany(records: AblationResult[]) {
         if (records.length === 0) return;
-        records.forEach(r => { if (!r.created_at) r.created_at = new Date().toISOString(); });
-        
-        const { error } = await this.client.from(this.tableName).insert(records);
+        const payload = records.map(record => ({
+            ...record,
+            snapshot_id: record.snapshot_id ?? null,
+            sbfa_triggered: null,
+            bft_triggered: null,
+            slt_triggered: null,
+            repid_triggered: null,
+            wsce_triggered: null,
+            gnnsr_triggered: null,
+            anfis_triggered: null,
+            study_a: null,
+            study_b: null,
+            study_c: null
+        }));
+
+        const { error } = await this.client.from(this.tableName).insert(payload);
         if (error) {
             console.error(`[AblationResultsWriter] Failed to write batch: ${error.message}`);
             throw error;

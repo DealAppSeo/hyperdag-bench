@@ -40,7 +40,7 @@ async function run() {
 
     const runId = new Date().getTime().toString();
     const manifestGen = new ManifestGenerator(runId);
-    manifestGen.setDataset('hal-test-prompts-2026-05-04', prompts.length);
+    manifestGen.setDatasetWithHash('hal-test-prompts-2026-05-04', prompts);
 
     console.log(`Starting Internal Prompts Benchmark for ${prompts.length} questions (Mode: ${process.env.HAL_MODE || 'mock'})...`);
 

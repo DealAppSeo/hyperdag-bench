@@ -42,6 +42,12 @@ export class ManifestGenerator {
         this.manifest.sample_size = sampleSize;
     }
 
+    setDatasetWithHash(datasetId: string, prompts: any[]) {
+        this.manifest.dataset_id = datasetId;
+        this.manifest.sample_size = prompts.length;
+        this.manifest.dataset_sha256 = crypto.createHash('sha256').update(JSON.stringify(prompts)).digest('hex');
+    }
+
     addModelUsage(provider: string, model: string) {
         if (!this.manifest.models_used!.some(m => m.provider === provider && m.model === model)) {
             this.manifest.models_used!.push({ provider, model });

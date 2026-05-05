@@ -5,6 +5,7 @@ export interface RunManifest {
     hal_library_path: string;
     hal_library_commit: string;
     dataset_id: string;
+    dataset_sha256?: string;
     models_used: Array<{ provider: string, model: string, version?: string }>;
     comma_threshold_default: number;
     sample_size: number;

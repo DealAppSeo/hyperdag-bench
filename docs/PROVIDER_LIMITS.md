@@ -9,10 +9,10 @@ These limits govern the `RotationClient` which automatically skips rate-limited 
 - **SambaNova**: $5 free credits + ongoing tier. Good fallback before burning Anthropic credits.
 - **Anthropic**: Paid tier. Used only as a fallback of last resort if all free tiers are exhausted.
 
-## Adapter Status
-- CerebrasAdapter: Ready
-- GroqAdapter: Ready
-- GoogleAIAdapter: Ready
-- MistralAdapter: Ready
-- SambaNovaAdapter: Ready
-- AnthropicAdapter: Ready (Paid fallback)
+## Adapter Status (Observed 2026-05-04)
+- **CerebrasAdapter**: Ready (Tested successfully, highly performant).
+- **GroqAdapter**: Needs Fix (Returns 400 Bad Request, likely model deprecation for `llama3-8b-8192`).
+- **GoogleAIAdapter**: Untested (Awaiting `GOOGLE_AI_API_KEY`).
+- **MistralAdapter**: Untested (Awaiting `MISTRAL_API_KEY`).
+- **SambaNovaAdapter**: Untested (Awaiting `SAMBANOVA_API_KEY`).
+- **AnthropicAdapter**: Needs Fix (Returns 404 Not Found for model `claude-3-haiku-20240307`).

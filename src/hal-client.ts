@@ -103,8 +103,31 @@ class RealHALClient implements IHALClient {
             throw new Error("Real HAL implementation is not available or does not export an evaluate() function.");
         }
         
-        // The real HAL is expected to take (prompt, output, context) and return a Promise resolving to HALResult.
-        const result = await this.realHalModule.evaluate(prompt, output, context);
+        const fullContext = { prompt, ...context };
+        
+        if (!fullContext.providers) {
+            fullContext.providers = [];
+            if (process.env.GROQ_API_KEY) {
+                fullContext.providers.push({ provider: 'groq', model: 'llama-3.3-70b-versatile', endpoint: 'https://api.groq.com/openai/v1/chat/completions', apiKey: process.env.GROQ_API_KEY, callType: 'openai-compat' });
+            }
+            if (process.env.CEREBRAS_API_KEY) {
+                fullContext.providers.push({ provider: 'cerebras', model: 'llama3.1-8b', endpoint: 'https://api.cerebras.ai/v1/chat/completions', apiKey: process.env.CEREBRAS_API_KEY, callType: 'openai-compat' });
+            }
+            if (process.env.DEEPSEEK_API_KEY) {
+                fullContext.providers.push({ provider: 'deepseek', model: 'deepseek-chat', endpoint: 'https://api.deepseek.com/v1/chat/completions', apiKey: process.env.DEEPSEEK_API_KEY, callType: 'openai-compat' });
+            }
+        }
+        
+        if (!fullContext.classifierProvider && process.env.GROQ_API_KEY) {
+            fullContext.classifierProvider = { provider: 'groq', model: 'llama-3.1-8b-instant', endpoint: 'https://api.groq.com/openai/v1/chat/completions', apiKey: process.env.GROQ_API_KEY, callType: 'openai-compat' };
+        }
+        
+        if (!fullContext.embeddingClient) {
+            const { createDefaultEmbeddingClient } = require(path.resolve(__dirname, '../../repid-engine/src/hal/lib/cross-llm/embedding-client.ts'));
+            fullContext.embeddingClient = createDefaultEmbeddingClient(process.env.VOYAGE_API_KEY, process.env.VOYAGE_API_KEY ? 'voyage' : undefined);
+        }
+
+        const result = await this.realHalModule.evaluate(prompt, output, fullContext);
         return result;
     }
 }

@@ -29,9 +29,29 @@ async function run() {
     const commaPrompt = prompts.find((p: any) => p.prompt_id === 'HAL-T1-003');
     
     if (sampleSize < prompts.length) {
-        prompts = prompts.slice(0, sampleSize);
-        if (!prompts.some((p: any) => p.prompt_id === 'HAL-T1-003') && commaPrompt) {
-             prompts[0] = commaPrompt; // replace first to ensure it is run
+        if (sampleSize === 10) {
+            const targets = [
+                'HAL-T1-003', // mathematics, bad
+                'HAL-T1-001', // cre, good?
+                'HAL-T1-050', // factual_error
+                'HAL-T1-100', // technical
+                'HAL-T1-020', // compliance
+                'HAL-T1-080', // blockchain
+                'HAL-T1-015', // factual, good
+                'HAL-T1-060', // factual, good
+                'HAL-T1-110', // technical, good
+                'HAL-T1-125'  // compliance, good
+            ];
+            prompts = targets.map(id => prompts.find((p: any) => p.prompt_id === id)).filter(Boolean);
+            while (prompts.length < 10) {
+                const next = payload.prompts.find((p: any) => !prompts.includes(p));
+                if (next) prompts.push(next);
+            }
+        } else {
+            prompts = prompts.slice(0, sampleSize);
+            if (!prompts.some((p: any) => p.prompt_id === 'HAL-T1-003') && commaPrompt) {
+                 prompts[0] = commaPrompt; // replace first to ensure it is run
+            }
         }
     }
 
@@ -47,6 +67,9 @@ async function run() {
     const strictnessArg = args.find(a => a.startsWith('--strictness='));
     const strictnessVal = strictnessArg ? strictnessArg.split('=')[1] : '3';
     const strictnessLevels = strictnessVal === 'all' ? [1, 2, 3, 4, 5] : [parseInt(strictnessVal, 10)];
+
+    const bsArg = args.find(a => a.startsWith('--benchmark-source='));
+    const benchmarkSourceBase = bsArg ? bsArg.split('=')[1] : 'internal-prompts';
 
     const outDir = path.join(__dirname, `../../results/${runId}`);
     if (isFresh && fs.existsSync(outDir)) {
@@ -129,7 +152,7 @@ async function run() {
                 await writer.write({
                     run_id: runId,
                     prompt_id: item.prompt_id,
-                    benchmark_source: `internal-prompts-strictness-${level}`,
+                    benchmark_source: `${benchmarkSourceBase}-strictness-${level}`,
                     hyperdag_bench_commit: manifestGen.finalize().sprint_commit,
                     repid_engine_commit: manifestGen.finalize().hal_library_commit,
                     manifest_dataset_id: 'hal-test-prompts-2026-05-04',

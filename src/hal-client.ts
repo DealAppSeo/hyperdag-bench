@@ -138,8 +138,10 @@ class RealHALClient implements IHALClient {
 export class HALClient implements IHALClient {
     private client: IHALClient;
     public mode: string;
+    private commaOverride?: number;
 
-    constructor() {
+    constructor(opts?: { commaOverride?: number }) {
+        this.commaOverride = opts?.commaOverride;
         this.mode = process.env.HAL_MODE || 'mock';
         if (this.mode === 'real') {
             console.log("[HAL Client] Initializing REAL HAL Mode...");
@@ -151,6 +153,9 @@ export class HALClient implements IHALClient {
     }
 
     async evaluate(prompt: string, output: string, context: any = {}): Promise<HALResult> {
+        if (this.commaOverride !== undefined) {
+            context.commaOverride = this.commaOverride;
+        }
         return this.client.evaluate(prompt, output, context);
     }
 }

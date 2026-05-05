@@ -15,7 +15,7 @@ async function run() {
     let prompts = payload.prompts;
 
     const llm = new CerebrasAdapter();
-    const hal = new HALClient();
+    const hal = new HALClient({ commaOverride: commaVal });
     const writer = new ThresholdSweepsWriter();
 
     const runId = Date.now().toString();

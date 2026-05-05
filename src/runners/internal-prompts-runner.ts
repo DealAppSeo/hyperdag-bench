@@ -5,8 +5,10 @@ import { ManifestGenerator } from '../manifest/run-manifest';
 import { CerebrasAdapter } from '../llm-clients/providers/cerebras';
 import dotenv from 'dotenv';
 dotenv.config({ path: 'C:\\Users\\Cash4\\repos\\repid-engine\\.env' });
+import { RunnerResultsWriter } from '../persistence/runner-results-writer';
 
 async function run() {
+    const writer = new RunnerResultsWriter();
     const args = process.argv.slice(2);
     let sampleSize = 26;
     
@@ -42,6 +44,10 @@ async function run() {
     const runId = runIdArg ? runIdArg.split('=')[1] : new Date().getTime().toString();
     const isFresh = args.includes('--fresh');
 
+    const strictnessArg = args.find(a => a.startsWith('--strictness='));
+    const strictnessVal = strictnessArg ? strictnessArg.split('=')[1] : '3';
+    const strictnessLevels = strictnessVal === 'all' ? [1, 2, 3, 4, 5] : [parseInt(strictnessVal, 10)];
+
     const outDir = path.join(__dirname, `../../results/${runId}`);
     if (isFresh && fs.existsSync(outDir)) {
         fs.rmSync(outDir, { recursive: true, force: true });
@@ -51,14 +57,17 @@ async function run() {
     }
 
     const jsonlPath = path.join(outDir, 'internal-prompts-results.jsonl');
-    const completedPromptIds = new Set<string>();
+    const completedKeys = new Set<string>();
 
     if (fs.existsSync(jsonlPath)) {
         const lines = fs.readFileSync(jsonlPath, 'utf-8').split('\n').filter(Boolean);
         for (const line of lines) {
             try {
                 const parsed = JSON.parse(line);
-                if (parsed.prompt_id) completedPromptIds.add(parsed.prompt_id);
+                if (parsed.prompt_id) {
+                    const s = parsed.hal_diagnostics?.strictness ?? 3;
+                    completedKeys.add(`${parsed.prompt_id}_${s}`);
+                }
             } catch (e) {}
         }
     }
@@ -67,51 +76,90 @@ async function run() {
     manifestGen.setDatasetWithHash('hal-test-prompts-2026-05-04', prompts);
 
     console.log(`Starting Internal Prompts Benchmark for ${prompts.length} questions (Mode: ${process.env.HAL_MODE || 'mock'})...`);
-    console.log(`Run ID: ${runId}. Checkpointing: ${completedPromptIds.size} already completed.`);
+    console.log(`Run ID: ${runId}. Checkpointing: ${completedKeys.size} evaluations already completed.`);
 
     for (const item of prompts) {
-        if (completedPromptIds.has(item.prompt_id)) {
-            console.log(`[Skipping] Q (${item.prompt_id}) already evaluated.`);
-            count++;
-            continue;
-        }
-
-        console.log(`[${count+1}/${prompts.length}] Q (${item.prompt_id}): ${item.prompt_text}`);
-        
         let answer = "";
         let latency_ms = 0;
-        try {
-            const llmRes = await llm.chat({
-                messages: [{ role: 'user', content: item.prompt_text }],
-                max_tokens: 50
-            });
-            answer = llmRes.content;
-            latency_ms = llmRes.latency_ms;
-            manifestGen.addModelUsage('cerebras', llmRes.model);
-        } catch (e: any) {
-            console.warn(`LLM failed: ${e.message}`);
-            answer = `[ERROR: LLM Failed - ${e.message}]`;
+        let llmCalled = false;
+
+        for (const level of strictnessLevels) {
+            const key = `${item.prompt_id}_${level}`;
+            if (completedKeys.has(key)) {
+                console.log(`[Skipping] Q (${item.prompt_id}) @ strictness ${level} already evaluated.`);
+                count++;
+                continue;
+            }
+
+            console.log(`[${count+1}/${prompts.length * strictnessLevels.length}] Q (${item.prompt_id}) @ strictness ${level}`);
+            
+            // Generate answer only once per prompt
+            if (!llmCalled) {
+                try {
+                    const llmRes = await llm.chat({
+                        messages: [{ role: 'user', content: item.prompt_text }],
+                        max_tokens: 50
+                    });
+                    answer = llmRes.content;
+                    latency_ms = llmRes.latency_ms;
+                    manifestGen.addModelUsage('cerebras', llmRes.model);
+                } catch (e: any) {
+                    console.warn(`LLM failed: ${e.message}`);
+                    answer = `[ERROR: LLM Failed - ${e.message}]`;
+                }
+                llmCalled = true;
+            }
+
+            const halRes = await hal.evaluate(item.prompt_text, answer, { strictness: level });
+
+            const resultItem = {
+                prompt_id: item.prompt_id,
+                prompt_text: item.prompt_text,
+                generated_answer: answer,
+                latency_ms: latency_ms,
+                hal_veto: halRes.vetoed,
+                comma_gap: halRes.comma_gap,
+                hal_diagnostics: { ...halRes, strictness: level },
+                timestamp: new Date().toISOString()
+            };
+            
+            fs.appendFileSync(jsonlPath, JSON.stringify(resultItem) + '\n');
+            
+            try {
+                await writer.write({
+                    run_id: runId,
+                    prompt_id: item.prompt_id,
+                    benchmark_source: `internal-prompts-strictness-${level}`,
+                    hyperdag_bench_commit: manifestGen.finalize().sprint_commit,
+                    repid_engine_commit: manifestGen.finalize().hal_library_commit,
+                    manifest_dataset_id: 'hal-test-prompts-2026-05-04',
+                    gen_provider: 'cerebras',
+                    gen_model: manifestGen.finalize().models_used.find((m: any) => m.provider === 'cerebras')?.model ?? 'llama3.1-8b',
+                    gen_latency_ms: latency_ms,
+                    generated_answer: answer,
+                    hal_mode: process.env.HAL_MODE || 'mock',
+                    hal_threshold: (halRes as any).threshold ?? 1.0136433,
+                    hal_score: halRes.hal_score,
+                    hal_vetoed: halRes.vetoed,
+                    comma_gap: halRes.comma_gap,
+                    signals: halRes,
+                    hal_diagnostics: { ...halRes, strictness: level },
+                    hal_latency_ms: 0,
+                    hal_providers_used: [],
+                    estimated_cost_usd: 0,
+                    ground_truth_is_hallucination: !!item.is_hallucination,
+                    was_caught: !!item.is_hallucination && halRes.vetoed,
+                    false_positive: !item.is_hallucination && halRes.vetoed
+                });
+            } catch (e: any) {
+                console.error(`DB Write Failed: ${e.message}`);
+            }
+
+            count++;
         }
-
-        const halRes = await hal.evaluate(item.prompt_text, answer);
-
-        const resultItem = {
-            prompt_id: item.prompt_id,
-            prompt_text: item.prompt_text,
-            generated_answer: answer,
-            latency_ms: latency_ms,
-            hal_veto: halRes.vetoed,
-            comma_gap: halRes.comma_gap,
-            hal_diagnostics: halRes,
-            timestamp: new Date().toISOString()
-        };
-        
-        fs.appendFileSync(jsonlPath, JSON.stringify(resultItem) + '\n');
         
         const manifestPath = path.join(outDir, 'manifest.json');
         fs.writeFileSync(manifestPath, JSON.stringify(manifestGen.finalize(), null, 2));
-        
-        count++;
     }
     
     console.log(`\nBenchmark complete! Results saved to ${outDir}`);

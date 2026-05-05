@@ -18,9 +18,12 @@ async function run() {
         sampleSize = parseInt(args[nIdx].split('=')[1], 10);
     }
 
-    const inputPath = path.join(__dirname, '../../data/internal-prompts/hal-test-prompts-2026-05-04.json');
+    const fixtureArg = args.find(a => a.startsWith('--fixture='));
+    const fixtureFilename = fixtureArg ? fixtureArg.split('=')[1] : 'hal-test-prompts-2026-05-04.json';
+    const inputPath = path.join(__dirname, `../../data/internal-prompts/${fixtureFilename}`);
+    
     if (!fs.existsSync(inputPath)) {
-        console.error("Fixture not found. Please run fetch-prompts script first.");
+        console.error(`Fixture not found at ${inputPath}. Please check the path.`);
         process.exit(1);
     }
 
@@ -107,7 +110,8 @@ async function run() {
     }
 
     const manifestGen = new ManifestGenerator(runId);
-    manifestGen.setDatasetWithHash('hal-test-prompts-2026-05-04', prompts);
+    const datasetName = fixtureFilename.replace('.json', '');
+    manifestGen.setDatasetWithHash(datasetName, prompts);
 
     console.log(`Starting Internal Prompts Benchmark for ${prompts.length} questions (Mode: ${process.env.HAL_MODE || 'mock'})...`);
     console.log(`Run ID: ${runId}. Checkpointing: ${completedKeys.size} evaluations already completed.`);
@@ -190,7 +194,7 @@ async function run() {
                     benchmark_source: `${benchmarkSourceBase}-strictness-${level}`,
                     hyperdag_bench_commit: manifestGen.finalize().sprint_commit,
                     repid_engine_commit: manifestGen.finalize().hal_library_commit,
-                    manifest_dataset_id: 'hal-test-prompts-2026-05-04',
+                    manifest_dataset_id: datasetName,
                     gen_provider: 'cerebras',
                     gen_model: manifestGen.finalize().models_used.find((m: any) => m.provider === 'cerebras')?.model ?? 'llama3.1-8b',
                     gen_latency_ms: latency_ms,

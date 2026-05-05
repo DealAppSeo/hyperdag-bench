@@ -16,7 +16,7 @@ export class AnthropicAdapter implements LLMClient {
         const systemMsg = args.messages.find((m: any) => m.role === 'system')?.content;
 
         const res = await this.anthropic.messages.create({
-            model: args.model || 'claude-3-haiku-20240307',
+            model: args.model || 'claude-haiku-4-5-20251001',
             messages: messages,
             max_tokens: args.max_tokens || 1024,
             temperature: args.temperature,

@@ -8,7 +8,7 @@ export class GroqAdapter implements LLMClient {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model: args.model || 'llama3-8b-8192',
+                model: args.model || 'llama-3.3-70b-versatile',
                 messages: args.messages,
                 max_tokens: args.max_tokens,
                 temperature: args.temperature

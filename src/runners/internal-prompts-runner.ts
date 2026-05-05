@@ -80,7 +80,14 @@ async function run() {
 
     const strictnessArg = args.find(a => a.startsWith('--strictness='));
     const strictnessVal = strictnessArg ? strictnessArg.split('=')[1] : '3';
-    const strictnessLevels = strictnessVal === 'all' ? [1, 2, 3, 4, 5] : [parseInt(strictnessVal, 10)];
+    let strictnessLevels: number[] = [];
+    if (strictnessVal === 'all') {
+        strictnessLevels = [1, 2, 3, 4, 5];
+    } else if (strictnessVal.includes(',')) {
+        strictnessLevels = strictnessVal.split(',').map(v => parseInt(v.trim(), 10));
+    } else {
+        strictnessLevels = [parseInt(strictnessVal, 10)];
+    }
 
     const bsArg = args.find(a => a.startsWith('--benchmark-source='));
     const benchmarkSourceBase = bsArg ? bsArg.split('=')[1] : 'internal-prompts';

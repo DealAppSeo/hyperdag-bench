@@ -38,13 +38,44 @@ async function run() {
     const results = [];
     let count = 0;
 
-    const runId = new Date().getTime().toString();
+    const runIdArg = args.find(a => a.startsWith('--run-id='));
+    const runId = runIdArg ? runIdArg.split('=')[1] : new Date().getTime().toString();
+    const isFresh = args.includes('--fresh');
+
+    const outDir = path.join(__dirname, `../../results/${runId}`);
+    if (isFresh && fs.existsSync(outDir)) {
+        fs.rmSync(outDir, { recursive: true, force: true });
+    }
+    if (!fs.existsSync(outDir)) {
+        fs.mkdirSync(outDir, { recursive: true });
+    }
+
+    const jsonlPath = path.join(outDir, 'internal-prompts-results.jsonl');
+    const completedPromptIds = new Set<string>();
+
+    if (fs.existsSync(jsonlPath)) {
+        const lines = fs.readFileSync(jsonlPath, 'utf-8').split('\n').filter(Boolean);
+        for (const line of lines) {
+            try {
+                const parsed = JSON.parse(line);
+                if (parsed.prompt_id) completedPromptIds.add(parsed.prompt_id);
+            } catch (e) {}
+        }
+    }
+
     const manifestGen = new ManifestGenerator(runId);
     manifestGen.setDatasetWithHash('hal-test-prompts-2026-05-04', prompts);
 
     console.log(`Starting Internal Prompts Benchmark for ${prompts.length} questions (Mode: ${process.env.HAL_MODE || 'mock'})...`);
+    console.log(`Run ID: ${runId}. Checkpointing: ${completedPromptIds.size} already completed.`);
 
     for (const item of prompts) {
+        if (completedPromptIds.has(item.prompt_id)) {
+            console.log(`[Skipping] Q (${item.prompt_id}) already evaluated.`);
+            count++;
+            continue;
+        }
+
         console.log(`[${count+1}/${prompts.length}] Q (${item.prompt_id}): ${item.prompt_text}`);
         
         let answer = "";
@@ -64,7 +95,7 @@ async function run() {
 
         const halRes = await hal.evaluate(item.prompt_text, answer);
 
-        results.push({
+        const resultItem = {
             prompt_id: item.prompt_id,
             prompt_text: item.prompt_text,
             generated_answer: answer,
@@ -73,19 +104,15 @@ async function run() {
             comma_gap: halRes.comma_gap,
             hal_diagnostics: halRes,
             timestamp: new Date().toISOString()
-        });
+        };
+        
+        fs.appendFileSync(jsonlPath, JSON.stringify(resultItem) + '\n');
+        
+        const manifestPath = path.join(outDir, 'manifest.json');
+        fs.writeFileSync(manifestPath, JSON.stringify(manifestGen.finalize(), null, 2));
         
         count++;
     }
-
-    const outDir = path.join(__dirname, `../../results/${runId}`);
-    if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
-    
-    const manifestPath = path.join(outDir, 'manifest.json');
-    fs.writeFileSync(manifestPath, JSON.stringify(manifestGen.finalize(), null, 2));
-
-    const jsonlPath = path.join(outDir, 'internal-prompts-results.jsonl');
-    fs.writeFileSync(jsonlPath, results.map(r => JSON.stringify(r)).join('\n'));
     
     console.log(`\nBenchmark complete! Results saved to ${outDir}`);
     // Write plumbing test output
